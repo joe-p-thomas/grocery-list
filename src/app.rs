@@ -4,11 +4,13 @@ use crate::list::GroceryList;
 pub const CATALOG_PATH: &str = "data/catalog.yml";
 pub const LIST_PATH: &str = "data/list.json";
 
-const COMMANDS: &[&str] = &["/open-list", "/validate-catalog", "/quit", "/exit"];
+const TOP_COMMANDS: &[&str] = &["/open-list", "/validate-catalog", "/quit", "/exit"];
+const LIST_COMMANDS: &[&str] = &["/add", "/clear"];
 
 pub enum Mode {
     Command,
     List,
+    AddItem,
 }
 
 pub struct App {
@@ -43,12 +45,17 @@ impl App {
             Vec::new()
         } else {
             match self.mode {
-                Mode::Command => COMMANDS
+                Mode::Command => TOP_COMMANDS
                     .iter()
                     .filter(|command| command.starts_with(self.input.as_str()))
                     .map(|command| command.to_string())
                     .collect(),
-                Mode::List => {
+                Mode::List => LIST_COMMANDS
+                    .iter()
+                    .filter(|command| command.starts_with(self.input.as_str()))
+                    .map(|command| command.to_string())
+                    .collect(),
+                Mode::AddItem => {
                     let query = self.input.to_lowercase();
                     self.catalog_items()
                         .filter(|item| item.to_lowercase().starts_with(&query))
@@ -94,12 +101,18 @@ impl App {
 
         match self.mode {
             Mode::Command => self.run_command(&text),
-            Mode::List => self.add_item(&text),
+            Mode::List => self.run_list_command(&text),
+            Mode::AddItem => self.add_item(&text),
         }
     }
 
-    pub fn close_list(&mut self) {
-        self.mode = Mode::Command;
+    /// Step back one level: AddItem -> List -> Command -> (quit, handled by caller).
+    pub fn back(&mut self) {
+        self.mode = match self.mode {
+            Mode::AddItem => Mode::List,
+            Mode::List => Mode::Command,
+            Mode::Command => Mode::Command,
+        };
         self.input.clear();
         self.suggestions.clear();
         self.status = None;
@@ -142,6 +155,14 @@ impl App {
             "/validate-catalog" => self.validate_catalog(),
             "/open-list" => self.open_list(),
             other => self.log.push(format!("unknown command: {other}")),
+        }
+    }
+
+    fn run_list_command(&mut self, command: &str) {
+        match command {
+            "/add" => self.mode = Mode::AddItem,
+            "/clear" => self.clear_list(),
+            other => self.status = Some(format!("unknown command: {other}")),
         }
     }
 
@@ -192,6 +213,14 @@ impl App {
         self.working_list.add(canonical.clone());
         match self.working_list.save(LIST_PATH) {
             Ok(()) => self.status = Some(format!("Added {canonical}")),
+            Err(e) => self.status = Some(e),
+        }
+    }
+
+    fn clear_list(&mut self) {
+        self.working_list.items.clear();
+        match self.working_list.save(LIST_PATH) {
+            Ok(()) => self.status = Some("Cleared list".to_string()),
             Err(e) => self.status = Some(e),
         }
     }

@@ -28,11 +28,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     match app.mode {
         Mode::Command => draw_output(frame, app, root[1]),
-        Mode::List => draw_list(frame, app, root[1]),
+        Mode::List | Mode::AddItem => draw_list(frame, app, root[1]),
     }
 
     if let Some(status) = &app.status {
-        let style = if status.starts_with("Unknown item") {
+        let style = if status.to_lowercase().starts_with("unknown") || status.starts_with("couldn't") {
             Style::default().fg(Color::Red)
         } else {
             Style::default().fg(Color::Green)
@@ -59,7 +59,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let input_title = match app.mode {
         Mode::Command => "Command",
-        Mode::List => "Add item",
+        Mode::List => "List command",
+        Mode::AddItem => "Add item",
     };
     frame.render_widget(
         Paragraph::new(app.input.as_str())
@@ -97,12 +98,12 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
             .collect()
     };
 
+    let title = match app.mode {
+        Mode::AddItem => "List (Esc to stop adding)",
+        _ => "List (Esc to go back, /add to add items, /clear to empty)",
+    };
     frame.render_widget(
-        List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("List (Esc to go back)"),
-        ),
+        List::new(items).block(Block::default().borders(Borders::ALL).title(title)),
         area,
     );
 }
