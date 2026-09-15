@@ -1,24 +1,39 @@
-use crate::catalog::Catalog;
+use crate::catalog::{Catalog, Section};
+use crate::list::GroceryList;
 
 pub const CATALOG_PATH: &str = "data/catalog.yml";
+pub const LIST_PATH: &str = "data/list.json";
 
-const COMMANDS: &[&str] = &["/validate-catalog", "/quit", "/exit"];
+const COMMANDS: &[&str] = &["/open-list", "/validate-catalog", "/quit", "/exit"];
+
+pub enum Mode {
+    Command,
+    List,
+}
 
 pub struct App {
+    pub mode: Mode,
     pub log: Vec<String>,
+    pub working_list: GroceryList,
+    pub catalog_sections: Vec<Section>,
     pub input: String,
-    pub suggestions: Vec<&'static str>,
+    pub suggestions: Vec<String>,
     pub selected_suggestion: usize,
+    pub status: Option<String>,
     pub should_quit: bool,
 }
 
 impl App {
     pub fn new() -> Self {
         App {
-            log: vec!["Type /validate-catalog or /quit".to_string()],
+            mode: Mode::Command,
+            log: vec!["Type /open-list, /validate-catalog, or /quit".to_string()],
+            working_list: GroceryList::default(),
+            catalog_sections: Vec::new(),
             input: String::new(),
             suggestions: Vec::new(),
             selected_suggestion: 0,
+            status: None,
             should_quit: false,
         }
     }
@@ -27,11 +42,20 @@ impl App {
         self.suggestions = if self.input.is_empty() {
             Vec::new()
         } else {
-            COMMANDS
-                .iter()
-                .filter(|command| command.starts_with(self.input.as_str()))
-                .copied()
-                .collect()
+            match self.mode {
+                Mode::Command => COMMANDS
+                    .iter()
+                    .filter(|command| command.starts_with(self.input.as_str()))
+                    .map(|command| command.to_string())
+                    .collect(),
+                Mode::List => {
+                    let query = self.input.to_lowercase();
+                    self.catalog_items()
+                        .filter(|item| item.to_lowercase().starts_with(&query))
+                        .cloned()
+                        .collect()
+                }
+            }
         };
         self.selected_suggestion = 0;
     }
@@ -54,23 +78,69 @@ impl App {
     }
 
     pub fn accept_suggestion(&mut self) {
-        if let Some(command) = self.suggestions.get(self.selected_suggestion) {
-            self.input = command.to_string();
+        if let Some(suggestion) = self.suggestions.get(self.selected_suggestion) {
+            self.input = suggestion.clone();
             self.suggestions.clear();
         }
     }
 
-    pub fn submit_command(&mut self) {
-        let command = self.input.trim().to_string();
+    pub fn submit_input(&mut self) {
+        let text = self.input.trim().to_string();
         self.input.clear();
         self.suggestions.clear();
-        if command.is_empty() {
+        if text.is_empty() {
             return;
         }
 
-        match command.as_str() {
+        match self.mode {
+            Mode::Command => self.run_command(&text),
+            Mode::List => self.add_item(&text),
+        }
+    }
+
+    pub fn close_list(&mut self) {
+        self.mode = Mode::Command;
+        self.input.clear();
+        self.suggestions.clear();
+        self.status = None;
+    }
+
+    /// Working list items grouped by catalog section, in catalog order.
+    /// Sections with no items on the list are omitted.
+    pub fn grouped_list(&self) -> Vec<(&str, Vec<&str>)> {
+        self.catalog_sections
+            .iter()
+            .filter_map(|section| {
+                let items: Vec<&str> = self
+                    .working_list
+                    .items
+                    .iter()
+                    .filter(|item| {
+                        section
+                            .items
+                            .iter()
+                            .any(|catalog_item| catalog_item.eq_ignore_ascii_case(item))
+                    })
+                    .map(|item| item.as_str())
+                    .collect();
+                if items.is_empty() {
+                    None
+                } else {
+                    Some((section.name.as_str(), items))
+                }
+            })
+            .collect()
+    }
+
+    fn catalog_items(&self) -> impl Iterator<Item = &String> {
+        self.catalog_sections.iter().flat_map(|s| s.items.iter())
+    }
+
+    fn run_command(&mut self, command: &str) {
+        match command {
             "/quit" | "/exit" => self.should_quit = true,
             "/validate-catalog" => self.validate_catalog(),
+            "/open-list" => self.open_list(),
             other => self.log.push(format!("unknown command: {other}")),
         }
     }
@@ -90,6 +160,39 @@ impl App {
                 }
             }
             Err(e) => self.log.push(format!("Error loading catalog: {e}")),
+        }
+    }
+
+    fn open_list(&mut self) {
+        match Catalog::load(CATALOG_PATH) {
+            Ok(catalog) => self.catalog_sections = catalog.sections,
+            Err(e) => self.log.push(format!("Error loading catalog: {e}")),
+        }
+
+        match GroceryList::load(LIST_PATH) {
+            Ok(list) => self.working_list = list,
+            Err(e) => self.log.push(e),
+        }
+
+        self.status = None;
+        self.mode = Mode::List;
+    }
+
+    fn add_item(&mut self, name: &str) {
+        let canonical = self
+            .catalog_items()
+            .find(|item| item.eq_ignore_ascii_case(name))
+            .cloned();
+
+        let Some(canonical) = canonical else {
+            self.status = Some(format!("Unknown item '{name}' — not in the catalog"));
+            return;
+        };
+
+        self.working_list.add(canonical.clone());
+        match self.working_list.save(LIST_PATH) {
+            Ok(()) => self.status = Some(format!("Added {canonical}")),
+            Err(e) => self.status = Some(e),
         }
     }
 }

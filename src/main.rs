@@ -1,5 +1,6 @@
 mod app;
 mod catalog;
+mod list;
 mod ui;
 
 use std::io;
@@ -10,7 +11,7 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_ra
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
-use app::App;
+use app::{App, Mode};
 
 fn main() -> io::Result<()> {
     enable_raw_mode()?;
@@ -38,7 +39,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
                 continue;
             }
             match key.code {
-                KeyCode::Enter => app.submit_command(),
+                KeyCode::Enter => app.submit_input(),
                 KeyCode::Char(c) => {
                     app.input.push(c);
                     app.input_changed();
@@ -50,7 +51,10 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
                 KeyCode::Up => app.select_prev_suggestion(),
                 KeyCode::Down => app.select_next_suggestion(),
                 KeyCode::Tab => app.accept_suggestion(),
-                KeyCode::Esc => app.should_quit = true,
+                KeyCode::Esc => match app.mode {
+                    Mode::List => app.close_list(),
+                    Mode::Command => app.should_quit = true,
+                },
                 _ => {}
             }
         }
