@@ -29,6 +29,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
     match app.mode {
         Mode::Command => draw_output(frame, app, root[1]),
         Mode::List | Mode::AddItem | Mode::RemoveItem => draw_list(frame, app, root[1]),
+        Mode::Catalog => draw_catalog(frame, app, root[1]),
+        Mode::CatalogSection | Mode::CatalogAddItem => draw_catalog_section(frame, app, root[1]),
     }
 
     if let Some(status) = &app.status {
@@ -65,6 +67,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Mode::List => "List command",
         Mode::AddItem => "Add item",
         Mode::RemoveItem => "Remove item",
+        Mode::Catalog => "Catalog command",
+        Mode::CatalogSection => "Command",
+        Mode::CatalogAddItem => "Add item to section",
     };
     frame.render_widget(
         Paragraph::new(app.input.as_str())
@@ -104,6 +109,44 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(
         List::new(items).block(Block::default().borders(Borders::ALL).title("List")),
+        area,
+    );
+}
+
+fn draw_catalog(frame: &mut Frame, app: &App, area: Rect) {
+    let items: Vec<ListItem> = if app.catalog_sections.is_empty() {
+        vec![ListItem::new("(no catalog loaded)")]
+    } else {
+        app.catalog_sections
+            .iter()
+            .map(|section| ListItem::new(section.name.as_str()))
+            .collect()
+    };
+
+    frame.render_widget(
+        List::new(items).block(Block::default().borders(Borders::ALL).title("Catalog")),
+        area,
+    );
+}
+
+fn draw_catalog_section(frame: &mut Frame, app: &App, area: Rect) {
+    let section = app
+        .catalog_sections
+        .iter()
+        .find(|section| Some(section.name.as_str()) == app.current_section.as_deref());
+
+    let items: Vec<ListItem> = match section {
+        Some(section) if !section.items.is_empty() => section
+            .items
+            .iter()
+            .map(|item| ListItem::new(item.as_str()))
+            .collect(),
+        _ => vec![ListItem::new("(no items)")],
+    };
+
+    let title = app.current_section.as_deref().unwrap_or("Section");
+    frame.render_widget(
+        List::new(items).block(Block::default().borders(Borders::ALL).title(title)),
         area,
     );
 }

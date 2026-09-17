@@ -53,7 +53,12 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
                 KeyCode::Tab => app.accept_suggestion(),
                 KeyCode::Esc => match app.mode {
                     Mode::Command => app.should_quit = true,
-                    Mode::List | Mode::AddItem | Mode::RemoveItem => app.back(),
+                    Mode::List
+                    | Mode::AddItem
+                    | Mode::RemoveItem
+                    | Mode::Catalog
+                    | Mode::CatalogSection
+                    | Mode::CatalogAddItem => app.back(),
                 },
                 _ => {}
             }

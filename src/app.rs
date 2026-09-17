@@ -4,14 +4,19 @@ use crate::list::GroceryList;
 pub const CATALOG_PATH: &str = "data/catalog.yml";
 pub const LIST_PATH: &str = "data/list.json";
 
-const TOP_COMMANDS: &[&str] = &["/open-list", "/validate-catalog", "/quit", "/exit"];
+const TOP_COMMANDS: &[&str] = &["/open-list", "/catalog", "/validate-catalog", "/quit", "/exit"];
 const LIST_COMMANDS: &[&str] = &["/add", "/remove", "/clear"];
+const CATALOG_COMMANDS: &[&str] = &["/format", "/open"];
+const CATALOG_SECTION_COMMANDS: &[&str] = &["/add"];
 
 pub enum Mode {
     Command,
     List,
     AddItem,
     RemoveItem,
+    Catalog,
+    CatalogSection,
+    CatalogAddItem,
 }
 
 pub struct App {
@@ -19,6 +24,7 @@ pub struct App {
     pub log: Vec<String>,
     pub working_list: GroceryList,
     pub catalog_sections: Vec<Section>,
+    pub current_section: Option<String>,
     pub input: String,
     pub suggestions: Vec<String>,
     pub selected_suggestion: usize,
@@ -33,6 +39,7 @@ impl App {
             log: Vec::new(),
             working_list: GroceryList::default(),
             catalog_sections: Vec::new(),
+            current_section: None,
             input: String::new(),
             suggestions: Vec::new(),
             selected_suggestion: 0,
@@ -74,6 +81,28 @@ impl App {
                         .cloned()
                         .collect()
                 }
+                Mode::Catalog => {
+                    if let Some(partial) = self.input.strip_prefix("/open ") {
+                        let query = partial.to_lowercase();
+                        self.catalog_sections
+                            .iter()
+                            .filter(|section| section.name.to_lowercase().starts_with(&query))
+                            .map(|section| format!("/open {}", section.name))
+                            .collect()
+                    } else {
+                        CATALOG_COMMANDS
+                            .iter()
+                            .filter(|command| command.starts_with(self.input.as_str()))
+                            .map(|command| command.to_string())
+                            .collect()
+                    }
+                }
+                Mode::CatalogSection => CATALOG_SECTION_COMMANDS
+                    .iter()
+                    .filter(|command| command.starts_with(self.input.as_str()))
+                    .map(|command| command.to_string())
+                    .collect(),
+                Mode::CatalogAddItem => Vec::new(),
             }
         };
         self.selected_suggestion = 0;
@@ -116,16 +145,26 @@ impl App {
             Mode::List => self.run_list_command(&text),
             Mode::AddItem => self.add_item(&text),
             Mode::RemoveItem => self.remove_item(&text),
+            Mode::Catalog => self.run_catalog_command(&text),
+            Mode::CatalogSection => self.run_catalog_section_command(&text),
+            Mode::CatalogAddItem => self.add_catalog_item(&text),
         }
     }
 
-    /// Step back one level: AddItem/RemoveItem -> List -> Command -> (quit, handled by caller).
+    /// Step back one level: AddItem/RemoveItem -> List, CatalogAddItem -> CatalogSection,
+    /// CatalogSection -> Catalog, List/Catalog -> Command -> (quit, handled by caller).
     pub fn back(&mut self) {
-        self.mode = match self.mode {
+        let next = match self.mode {
             Mode::AddItem | Mode::RemoveItem => Mode::List,
-            Mode::List => Mode::Command,
+            Mode::List | Mode::Catalog => Mode::Command,
+            Mode::CatalogAddItem => Mode::CatalogSection,
+            Mode::CatalogSection => Mode::Catalog,
             Mode::Command => Mode::Command,
         };
+        if matches!(self.mode, Mode::CatalogSection) {
+            self.current_section = None;
+        }
+        self.mode = next;
         self.input.clear();
         self.suggestions.clear();
         self.status = None;
@@ -168,6 +207,7 @@ impl App {
             "/quit" | "/exit" => self.should_quit = true,
             "/validate-catalog" => self.validate_catalog(),
             "/open-list" => self.open_list(),
+            "/catalog" => self.open_catalog(),
             other => self.log.push(format!("unknown command: {other}")),
         }
     }
@@ -177,6 +217,23 @@ impl App {
             "/add" => self.mode = Mode::AddItem,
             "/remove" => self.mode = Mode::RemoveItem,
             "/clear" => self.clear_list(),
+            other => self.status = Some(format!("unknown command: {other}")),
+        }
+    }
+
+    fn run_catalog_command(&mut self, command: &str) {
+        if command == "/format" {
+            self.format_catalog();
+        } else if let Some(name) = command.strip_prefix("/open ") {
+            self.open_catalog_section(name.trim());
+        } else {
+            self.status = Some(format!("unknown command: {command}"));
+        }
+    }
+
+    fn run_catalog_section_command(&mut self, command: &str) {
+        match command {
+            "/add" => self.mode = Mode::CatalogAddItem,
             other => self.status = Some(format!("unknown command: {other}")),
         }
     }
@@ -212,6 +269,87 @@ impl App {
 
         self.status = None;
         self.mode = Mode::List;
+    }
+
+    fn open_catalog(&mut self) {
+        match Catalog::load(CATALOG_PATH) {
+            Ok(catalog) => {
+                self.catalog_sections = catalog.sections;
+                self.status = None;
+            }
+            Err(e) => self.status = Some(e.to_string()),
+        }
+        self.mode = Mode::Catalog;
+    }
+
+    fn open_catalog_section(&mut self, name: &str) {
+        let matched = self
+            .catalog_sections
+            .iter()
+            .find(|section| section.name.eq_ignore_ascii_case(name));
+
+        let Some(section) = matched else {
+            self.status = Some(format!("No such section '{name}'"));
+            return;
+        };
+
+        self.current_section = Some(section.name.clone());
+        self.status = None;
+        self.mode = Mode::CatalogSection;
+    }
+
+    fn format_catalog(&mut self) {
+        let mut catalog = match Catalog::load(CATALOG_PATH) {
+            Ok(catalog) => catalog,
+            Err(e) => {
+                self.status = Some(e.to_string());
+                return;
+            }
+        };
+
+        catalog.sort_items();
+        match catalog.save(CATALOG_PATH) {
+            Ok(()) => {
+                self.catalog_sections = catalog.sections;
+                self.status = Some("Catalog formatted".to_string());
+            }
+            Err(e) => self.status = Some(e),
+        }
+    }
+
+    fn add_catalog_item(&mut self, name: &str) {
+        let Some(section_name) = self.current_section.clone() else {
+            self.status = Some("No section open".to_string());
+            return;
+        };
+
+        let mut catalog = match Catalog::load(CATALOG_PATH) {
+            Ok(catalog) => catalog,
+            Err(e) => {
+                self.status = Some(e.to_string());
+                return;
+            }
+        };
+
+        let Some(section) = catalog
+            .sections
+            .iter_mut()
+            .find(|section| section.name == section_name)
+        else {
+            self.status = Some(format!("No such section '{section_name}'"));
+            return;
+        };
+
+        section.items.push(name.to_string());
+        section.items.sort_by_key(|item| item.to_lowercase());
+
+        match catalog.save(CATALOG_PATH) {
+            Ok(()) => {
+                self.catalog_sections = catalog.sections;
+                self.status = Some(format!("Added {name} to {section_name}"));
+            }
+            Err(e) => self.status = Some(e),
+        }
     }
 
     fn add_item(&mut self, name: &str) {

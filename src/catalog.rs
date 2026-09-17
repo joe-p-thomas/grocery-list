@@ -2,14 +2,14 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Catalog {
     pub sections: Vec<Section>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Section {
     pub name: String,
     pub items: Vec<String>,
@@ -70,6 +70,19 @@ impl Catalog {
         }
 
         issues
+    }
+
+    /// Sorts each section's items alphabetically (case-insensitive), in place.
+    pub fn sort_items(&mut self) {
+        for section in &mut self.sections {
+            section.items.sort_by_key(|item| item.to_lowercase());
+        }
+    }
+
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), String> {
+        let path = path.as_ref();
+        let yaml = serde_yaml::to_string(self).map_err(|e| format!("couldn't serialize catalog: {e}"))?;
+        fs::write(path, yaml).map_err(|e| format!("couldn't write catalog file '{}': {e}", path.display()))
     }
 }
 
