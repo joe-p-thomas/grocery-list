@@ -124,7 +124,7 @@ impl App {
         self.catalog_sections
             .iter()
             .filter_map(|section| {
-                let items: Vec<&str> = self
+                let mut items: Vec<&str> = self
                     .working_list
                     .items
                     .iter()
@@ -136,6 +136,7 @@ impl App {
                     })
                     .map(|item| item.as_str())
                     .collect();
+                items.sort_by_key(|item| item.to_lowercase());
                 if items.is_empty() {
                     None
                 } else {
