@@ -118,28 +118,31 @@ impl App {
         self.status = None;
     }
 
-    /// Working list items grouped by catalog section, in catalog order.
+    /// Working list items grouped by catalog section (in catalog order), with
+    /// duplicate items collapsed into a single (name, count) entry.
     /// Sections with no items on the list are omitted.
-    pub fn grouped_list(&self) -> Vec<(&str, Vec<&str>)> {
+    pub fn grouped_list(&self) -> Vec<(&str, Vec<(&str, usize)>)> {
         self.catalog_sections
             .iter()
             .filter_map(|section| {
-                let items: Vec<&str> = self
-                    .working_list
-                    .items
-                    .iter()
-                    .filter(|item| {
-                        section
-                            .items
-                            .iter()
-                            .any(|catalog_item| catalog_item.eq_ignore_ascii_case(item))
-                    })
-                    .map(|item| item.as_str())
-                    .collect();
-                if items.is_empty() {
+                let mut counts: Vec<(&str, usize)> = Vec::new();
+                for item in &self.working_list.items {
+                    let in_section = section
+                        .items
+                        .iter()
+                        .any(|catalog_item| catalog_item.eq_ignore_ascii_case(item));
+                    if !in_section {
+                        continue;
+                    }
+                    match counts.iter_mut().find(|(name, _)| *name == item.as_str()) {
+                        Some(entry) => entry.1 += 1,
+                        None => counts.push((item.as_str(), 1)),
+                    }
+                }
+                if counts.is_empty() {
                     None
                 } else {
-                    Some((section.name.as_str(), items))
+                    Some((section.name.as_str(), counts))
                 }
             })
             .collect()
