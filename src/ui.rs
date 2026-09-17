@@ -92,16 +92,8 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
         grouped
             .into_iter()
             .flat_map(|(section, items)| {
-                std::iter::once(ListItem::new(section.bold())).chain(items.into_iter().map(
-                    |(name, count)| {
-                        let line = if count > 1 {
-                            format!("  {name} (x{count})")
-                        } else {
-                            format!("  {name}")
-                        };
-                        ListItem::new(line)
-                    },
-                ))
+                std::iter::once(ListItem::new(section.bold()))
+                    .chain(items.into_iter().map(|item| ListItem::new(format!("  {item}"))))
             })
             .collect()
     };
