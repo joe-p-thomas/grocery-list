@@ -5,12 +5,13 @@ pub const CATALOG_PATH: &str = "data/catalog.yml";
 pub const LIST_PATH: &str = "data/list.json";
 
 const TOP_COMMANDS: &[&str] = &["/open-list", "/validate-catalog", "/quit", "/exit"];
-const LIST_COMMANDS: &[&str] = &["/add", "/clear"];
+const LIST_COMMANDS: &[&str] = &["/add", "/remove", "/clear"];
 
 pub enum Mode {
     Command,
     List,
     AddItem,
+    RemoveItem,
 }
 
 pub struct App {
@@ -29,7 +30,7 @@ impl App {
     pub fn new() -> Self {
         App {
             mode: Mode::Command,
-            log: vec!["Type /open-list, /validate-catalog, or /quit".to_string()],
+            log: Vec::new(),
             working_list: GroceryList::default(),
             catalog_sections: Vec::new(),
             input: String::new(),
@@ -59,6 +60,17 @@ impl App {
                     let query = self.input.to_lowercase();
                     self.catalog_items()
                         .filter(|item| item.to_lowercase().starts_with(&query))
+                        .cloned()
+                        .collect()
+                }
+                Mode::RemoveItem => {
+                    let query = self.input.to_lowercase();
+                    let mut seen = std::collections::HashSet::new();
+                    self.working_list
+                        .items
+                        .iter()
+                        .filter(|item| item.to_lowercase().starts_with(&query))
+                        .filter(|item| seen.insert(item.to_lowercase()))
                         .cloned()
                         .collect()
                 }
@@ -103,13 +115,14 @@ impl App {
             Mode::Command => self.run_command(&text),
             Mode::List => self.run_list_command(&text),
             Mode::AddItem => self.add_item(&text),
+            Mode::RemoveItem => self.remove_item(&text),
         }
     }
 
-    /// Step back one level: AddItem -> List -> Command -> (quit, handled by caller).
+    /// Step back one level: AddItem/RemoveItem -> List -> Command -> (quit, handled by caller).
     pub fn back(&mut self) {
         self.mode = match self.mode {
-            Mode::AddItem => Mode::List,
+            Mode::AddItem | Mode::RemoveItem => Mode::List,
             Mode::List => Mode::Command,
             Mode::Command => Mode::Command,
         };
@@ -162,6 +175,7 @@ impl App {
     fn run_list_command(&mut self, command: &str) {
         match command {
             "/add" => self.mode = Mode::AddItem,
+            "/remove" => self.mode = Mode::RemoveItem,
             "/clear" => self.clear_list(),
             other => self.status = Some(format!("unknown command: {other}")),
         }
@@ -214,6 +228,25 @@ impl App {
         self.working_list.add(canonical.clone());
         match self.working_list.save(LIST_PATH) {
             Ok(()) => self.status = Some(format!("Added {canonical}")),
+            Err(e) => self.status = Some(e),
+        }
+    }
+
+    fn remove_item(&mut self, name: &str) {
+        let position = self
+            .working_list
+            .items
+            .iter()
+            .position(|item| item.eq_ignore_ascii_case(name));
+
+        let Some(index) = position else {
+            self.status = Some(format!("No such item '{name}' on the list"));
+            return;
+        };
+
+        let removed = self.working_list.items.remove(index);
+        match self.working_list.save(LIST_PATH) {
+            Ok(()) => self.status = Some(format!("Removed {removed}")),
             Err(e) => self.status = Some(e),
         }
     }
