@@ -5,7 +5,7 @@ pub const CATALOG_PATH: &str = "data/catalog.yml";
 pub const LIST_PATH: &str = "data/list.json";
 
 pub const MENU_ITEMS: &[&str] = &["List", "Catalog", "Exit"];
-const LIST_COMMANDS: &[&str] = &["/add", "/remove", "/clear"];
+const LIST_COMMANDS: &[&str] = &["/add", "/clear"];
 const CATALOG_COMMANDS: &[&str] = &["/format", "/open"];
 const CATALOG_SECTION_COMMANDS: &[&str] = &["/add"];
 
@@ -13,7 +13,6 @@ pub enum Mode {
     Menu,
     List,
     AddItem,
-    RemoveItem,
     Catalog,
     CatalogSection,
     CatalogAddItem,
@@ -22,6 +21,7 @@ pub enum Mode {
 pub struct App {
     pub mode: Mode,
     pub menu_selected: usize,
+    pub list_selected: usize,
     pub working_list: GroceryList,
     pub catalog_sections: Vec<Section>,
     pub current_section: Option<String>,
@@ -37,6 +37,7 @@ impl App {
         App {
             mode: Mode::Menu,
             menu_selected: 0,
+            list_selected: 0,
             working_list: GroceryList::default(),
             catalog_sections: Vec::new(),
             current_section: None,
@@ -63,17 +64,6 @@ impl App {
                     let query = self.input.to_lowercase();
                     self.catalog_items()
                         .filter(|item| item.to_lowercase().starts_with(&query))
-                        .cloned()
-                        .collect()
-                }
-                Mode::RemoveItem => {
-                    let query = self.input.to_lowercase();
-                    let mut seen = std::collections::HashSet::new();
-                    self.working_list
-                        .items
-                        .iter()
-                        .filter(|item| item.to_lowercase().starts_with(&query))
-                        .filter(|item| seen.insert(item.to_lowercase()))
                         .cloned()
                         .collect()
                 }
@@ -141,6 +131,29 @@ impl App {
         }
     }
 
+    pub fn select_list_prev(&mut self) {
+        self.list_selected = self.list_selected.saturating_sub(1);
+    }
+
+    pub fn select_list_next(&mut self) {
+        let len = self.list_items_flat().len();
+        if len > 0 && self.list_selected + 1 < len {
+            self.list_selected += 1;
+        }
+    }
+
+    pub fn remove_selected(&mut self) {
+        let Some(name) = self
+            .list_items_flat()
+            .get(self.list_selected)
+            .map(|item| item.to_string())
+        else {
+            return;
+        };
+        self.remove_item(&name);
+        self.clamp_list_selected();
+    }
+
     pub fn accept_suggestion(&mut self) {
         if let Some(suggestion) = self.suggestions.get(self.selected_suggestion) {
             self.input = suggestion.clone();
@@ -160,18 +173,17 @@ impl App {
             Mode::Menu => {}
             Mode::List => self.run_list_command(&text),
             Mode::AddItem => self.add_item(&text),
-            Mode::RemoveItem => self.remove_item(&text),
             Mode::Catalog => self.run_catalog_command(&text),
             Mode::CatalogSection => self.run_catalog_section_command(&text),
             Mode::CatalogAddItem => self.add_catalog_item(&text),
         }
     }
 
-    /// Step back one level: AddItem/RemoveItem -> List, CatalogAddItem -> CatalogSection,
-    /// CatalogSection -> Catalog, List/Catalog -> Command -> (quit, handled by caller).
+    /// Step back one level: AddItem -> List, CatalogAddItem -> CatalogSection,
+    /// CatalogSection -> Catalog, List/Catalog -> Menu.
     pub fn back(&mut self) {
         let next = match self.mode {
-            Mode::AddItem | Mode::RemoveItem => Mode::List,
+            Mode::AddItem => Mode::List,
             Mode::List | Mode::Catalog => Mode::Menu,
             Mode::CatalogAddItem => Mode::CatalogSection,
             Mode::CatalogSection => Mode::Catalog,
@@ -184,6 +196,9 @@ impl App {
         self.input.clear();
         self.suggestions.clear();
         self.status = None;
+        if matches!(self.mode, Mode::List) {
+            self.clamp_list_selected();
+        }
     }
 
     /// Working list items grouped by catalog section, in catalog order.
@@ -218,10 +233,23 @@ impl App {
         self.catalog_sections.iter().flat_map(|s| s.items.iter())
     }
 
+    /// Working list items in the same flattened, section-grouped order as `grouped_list`,
+    /// but without the section-header entries — this is what `list_selected` indexes into.
+    fn list_items_flat(&self) -> Vec<&str> {
+        self.grouped_list()
+            .into_iter()
+            .flat_map(|(_, items)| items)
+            .collect()
+    }
+
+    fn clamp_list_selected(&mut self) {
+        let len = self.list_items_flat().len();
+        self.list_selected = if len == 0 { 0 } else { self.list_selected.min(len - 1) };
+    }
+
     fn run_list_command(&mut self, command: &str) {
         match command {
             "/add" => self.mode = Mode::AddItem,
-            "/remove" => self.mode = Mode::RemoveItem,
             "/clear" => self.clear_list(),
             other => self.status = Some(format!("unknown command: {other}")),
         }
@@ -258,6 +286,7 @@ impl App {
             Err(e) => self.status = Some(e),
         }
 
+        self.list_selected = 0;
         self.mode = Mode::List;
     }
 
@@ -381,6 +410,7 @@ impl App {
 
     fn clear_list(&mut self) {
         self.working_list.items.clear();
+        self.list_selected = 0;
         match self.working_list.save(LIST_PATH) {
             Ok(()) => self.status = Some("Cleared list".to_string()),
             Err(e) => self.status = Some(e),

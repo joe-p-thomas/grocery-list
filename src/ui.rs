@@ -12,7 +12,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
         app.suggestions.len().min(5) as u16 + 2
     };
     let status_height = if app.status.is_some() { 1 } else { 0 };
-    let input_height = if matches!(app.mode, Mode::Menu) { 0 } else { 3 };
+    let input_hidden = matches!(app.mode, Mode::Menu)
+        || (matches!(app.mode, Mode::List) && app.input.is_empty());
+    let input_height = if input_hidden { 0 } else { 3 };
 
     let root = Layout::default()
         .direction(Direction::Vertical)
@@ -29,7 +31,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     match app.mode {
         Mode::Menu => draw_menu(frame, app, root[1]),
-        Mode::List | Mode::AddItem | Mode::RemoveItem => draw_list(frame, app, root[1]),
+        Mode::List | Mode::AddItem => draw_list(frame, app, root[1]),
         Mode::Catalog => draw_catalog(frame, app, root[1]),
         Mode::CatalogSection | Mode::CatalogAddItem => draw_catalog_section(frame, app, root[1]),
     }
@@ -63,12 +65,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
         frame.render_stateful_widget(list, root[3], &mut state);
     }
 
-    if !matches!(app.mode, Mode::Menu) {
+    if !input_hidden {
         let input_title = match app.mode {
             Mode::Menu => "",
             Mode::List => "List command",
             Mode::AddItem => "Add item",
-            Mode::RemoveItem => "Remove item",
             Mode::Catalog => "Catalog command",
             Mode::CatalogSection => "Command",
             Mode::CatalogAddItem => "Add item to section",
@@ -97,23 +98,34 @@ fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
     let grouped = app.grouped_list();
+    let block = Block::default().borders(Borders::ALL).title("List");
 
-    let items: Vec<ListItem> = if grouped.is_empty() {
-        vec![ListItem::new("(no items yet)")]
-    } else {
-        grouped
-            .into_iter()
-            .flat_map(|(section, items)| {
-                std::iter::once(ListItem::new(section.bold()))
-                    .chain(items.into_iter().map(|item| ListItem::new(format!("  {item}"))))
-            })
-            .collect()
-    };
+    if grouped.is_empty() {
+        frame.render_widget(
+            List::new(vec![ListItem::new("(no items yet)")]).block(block),
+            area,
+        );
+        return;
+    }
 
-    frame.render_widget(
-        List::new(items).block(Block::default().borders(Borders::ALL).title("List")),
-        area,
-    );
+    let browsing = matches!(app.mode, Mode::List);
+    let mut rows: Vec<ListItem> = Vec::new();
+    let mut selected_row = None;
+    let mut flat_index = 0usize;
+    for (section, items) in grouped {
+        rows.push(ListItem::new(section.bold()));
+        for item in items {
+            if browsing && flat_index == app.list_selected {
+                selected_row = Some(rows.len());
+            }
+            rows.push(ListItem::new(format!("  {item}")));
+            flat_index += 1;
+        }
+    }
+
+    let list = List::new(rows).block(block).highlight_symbol("> ");
+    let mut state = ListState::default().with_selected(selected_row);
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 fn draw_catalog(frame: &mut Frame, app: &App, area: Rect) {
