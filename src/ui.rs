@@ -13,7 +13,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     };
     let status_height = if app.status.is_some() { 1 } else { 0 };
     let input_hidden = matches!(app.mode, Mode::Menu)
-        || (matches!(app.mode, Mode::List) && app.input.is_empty());
+        || (matches!(app.mode, Mode::List | Mode::Catalog) && app.input.is_empty());
     let input_height = if input_hidden { 0 } else { 3 };
 
     let root = Layout::default()
@@ -132,19 +132,28 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_catalog(frame: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = if app.catalog_sections.is_empty() {
-        vec![ListItem::new("(no catalog loaded)")]
-    } else {
-        app.catalog_sections
-            .iter()
-            .map(|section| ListItem::new(section.name.as_str()))
-            .collect()
-    };
+    let block = Block::default().borders(Borders::ALL).title("Catalog");
 
-    frame.render_widget(
-        List::new(items).block(Block::default().borders(Borders::ALL).title("Catalog")),
-        area,
-    );
+    if app.catalog_sections.is_empty() {
+        frame.render_widget(
+            List::new(vec![ListItem::new("(no catalog loaded)")]).block(block),
+            area,
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .catalog_sections
+        .iter()
+        .map(|section| ListItem::new(section.name.as_str()))
+        .collect();
+
+    let list = List::new(items)
+        .block(block)
+        .highlight_symbol("> ")
+        .highlight_spacing(HighlightSpacing::Always);
+    let mut state = ListState::default().with_selected(Some(app.catalog_selected));
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 fn draw_catalog_section(frame: &mut Frame, app: &App, area: Rect) {

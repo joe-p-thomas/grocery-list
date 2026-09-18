@@ -58,6 +58,18 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
                     }
                     _ => {}
                 }
+            } else if matches!(app.mode, Mode::Catalog) && app.input.is_empty() {
+                match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => app.select_catalog_next(),
+                    KeyCode::Char('k') | KeyCode::Up => app.select_catalog_prev(),
+                    KeyCode::Enter => app.confirm_catalog_selection(),
+                    KeyCode::Esc => app.back(),
+                    KeyCode::Char(c) => {
+                        app.input.push(c);
+                        app.input_changed();
+                    }
+                    _ => {}
+                }
             } else {
                 match key.code {
                     KeyCode::Enter => app.submit_input(),
@@ -73,7 +85,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
                     KeyCode::Down => app.select_next_suggestion(),
                     KeyCode::Tab => app.accept_suggestion(),
                     KeyCode::Esc => {
-                        if matches!(app.mode, Mode::List) {
+                        if matches!(app.mode, Mode::List | Mode::Catalog) {
                             app.input.clear();
                             app.suggestions.clear();
                         } else {

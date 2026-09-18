@@ -6,7 +6,7 @@ pub const LIST_PATH: &str = "data/list.json";
 
 pub const MENU_ITEMS: &[&str] = &["List", "Catalog", "Exit"];
 const LIST_COMMANDS: &[&str] = &["/add", "/clear"];
-const CATALOG_COMMANDS: &[&str] = &["/format", "/open"];
+const CATALOG_COMMANDS: &[&str] = &["/format"];
 const CATALOG_SECTION_COMMANDS: &[&str] = &["/add"];
 
 pub enum Mode {
@@ -22,6 +22,7 @@ pub struct App {
     pub mode: Mode,
     pub menu_selected: usize,
     pub list_selected: usize,
+    pub catalog_selected: usize,
     pub working_list: GroceryList,
     pub catalog_sections: Vec<Section>,
     pub current_section: Option<String>,
@@ -38,6 +39,7 @@ impl App {
             mode: Mode::Menu,
             menu_selected: 0,
             list_selected: 0,
+            catalog_selected: 0,
             working_list: GroceryList::default(),
             catalog_sections: Vec::new(),
             current_section: None,
@@ -67,22 +69,11 @@ impl App {
                         .cloned()
                         .collect()
                 }
-                Mode::Catalog => {
-                    if let Some(partial) = self.input.strip_prefix("/open ") {
-                        let query = partial.to_lowercase();
-                        self.catalog_sections
-                            .iter()
-                            .filter(|section| section.name.to_lowercase().starts_with(&query))
-                            .map(|section| format!("/open {}", section.name))
-                            .collect()
-                    } else {
-                        CATALOG_COMMANDS
-                            .iter()
-                            .filter(|command| command.starts_with(self.input.as_str()))
-                            .map(|command| command.to_string())
-                            .collect()
-                    }
-                }
+                Mode::Catalog => CATALOG_COMMANDS
+                    .iter()
+                    .filter(|command| command.starts_with(self.input.as_str()))
+                    .map(|command| command.to_string())
+                    .collect(),
                 Mode::CatalogSection => CATALOG_SECTION_COMMANDS
                     .iter()
                     .filter(|command| command.starts_with(self.input.as_str()))
@@ -152,6 +143,28 @@ impl App {
         };
         self.remove_item(&name);
         self.clamp_list_selected();
+    }
+
+    pub fn select_catalog_prev(&mut self) {
+        self.catalog_selected = self.catalog_selected.saturating_sub(1);
+    }
+
+    pub fn select_catalog_next(&mut self) {
+        let len = self.catalog_sections.len();
+        if len > 0 && self.catalog_selected + 1 < len {
+            self.catalog_selected += 1;
+        }
+    }
+
+    pub fn confirm_catalog_selection(&mut self) {
+        let Some(name) = self
+            .catalog_sections
+            .get(self.catalog_selected)
+            .map(|section| section.name.clone())
+        else {
+            return;
+        };
+        self.open_catalog_section(&name);
     }
 
     pub fn accept_suggestion(&mut self) {
@@ -256,12 +269,9 @@ impl App {
     }
 
     fn run_catalog_command(&mut self, command: &str) {
-        if command == "/format" {
-            self.format_catalog();
-        } else if let Some(name) = command.strip_prefix("/open ") {
-            self.open_catalog_section(name.trim());
-        } else {
-            self.status = Some(format!("unknown command: {command}"));
+        match command {
+            "/format" => self.format_catalog(),
+            other => self.status = Some(format!("unknown command: {other}")),
         }
     }
 
@@ -298,6 +308,7 @@ impl App {
             }
             Err(e) => self.status = Some(e.to_string()),
         }
+        self.catalog_selected = 0;
         self.mode = Mode::Catalog;
     }
 
