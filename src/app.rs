@@ -4,13 +4,13 @@ use crate::list::GroceryList;
 pub const CATALOG_PATH: &str = "data/catalog.yml";
 pub const LIST_PATH: &str = "data/list.json";
 
-const TOP_COMMANDS: &[&str] = &["/open-list", "/catalog", "/validate-catalog", "/quit", "/exit"];
+pub const MENU_ITEMS: &[&str] = &["List", "Catalog", "Exit"];
 const LIST_COMMANDS: &[&str] = &["/add", "/remove", "/clear"];
 const CATALOG_COMMANDS: &[&str] = &["/format", "/open"];
 const CATALOG_SECTION_COMMANDS: &[&str] = &["/add"];
 
 pub enum Mode {
-    Command,
+    Menu,
     List,
     AddItem,
     RemoveItem,
@@ -21,7 +21,7 @@ pub enum Mode {
 
 pub struct App {
     pub mode: Mode,
-    pub log: Vec<String>,
+    pub menu_selected: usize,
     pub working_list: GroceryList,
     pub catalog_sections: Vec<Section>,
     pub current_section: Option<String>,
@@ -35,8 +35,8 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         App {
-            mode: Mode::Command,
-            log: Vec::new(),
+            mode: Mode::Menu,
+            menu_selected: 0,
             working_list: GroceryList::default(),
             catalog_sections: Vec::new(),
             current_section: None,
@@ -53,11 +53,7 @@ impl App {
             Vec::new()
         } else {
             match self.mode {
-                Mode::Command => TOP_COMMANDS
-                    .iter()
-                    .filter(|command| command.starts_with(self.input.as_str()))
-                    .map(|command| command.to_string())
-                    .collect(),
+                Mode::Menu => Vec::new(),
                 Mode::List => LIST_COMMANDS
                     .iter()
                     .filter(|command| command.starts_with(self.input.as_str()))
@@ -125,6 +121,26 @@ impl App {
         self.selected_suggestion = (self.selected_suggestion + 1) % self.suggestions.len();
     }
 
+    pub fn select_menu_prev(&mut self) {
+        self.menu_selected = self
+            .menu_selected
+            .checked_sub(1)
+            .unwrap_or(MENU_ITEMS.len() - 1);
+    }
+
+    pub fn select_menu_next(&mut self) {
+        self.menu_selected = (self.menu_selected + 1) % MENU_ITEMS.len();
+    }
+
+    pub fn confirm_menu(&mut self) {
+        match self.menu_selected {
+            0 => self.open_list(),
+            1 => self.open_catalog(),
+            2 => self.should_quit = true,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn accept_suggestion(&mut self) {
         if let Some(suggestion) = self.suggestions.get(self.selected_suggestion) {
             self.input = suggestion.clone();
@@ -141,7 +157,7 @@ impl App {
         }
 
         match self.mode {
-            Mode::Command => self.run_command(&text),
+            Mode::Menu => {}
             Mode::List => self.run_list_command(&text),
             Mode::AddItem => self.add_item(&text),
             Mode::RemoveItem => self.remove_item(&text),
@@ -156,10 +172,10 @@ impl App {
     pub fn back(&mut self) {
         let next = match self.mode {
             Mode::AddItem | Mode::RemoveItem => Mode::List,
-            Mode::List | Mode::Catalog => Mode::Command,
+            Mode::List | Mode::Catalog => Mode::Menu,
             Mode::CatalogAddItem => Mode::CatalogSection,
             Mode::CatalogSection => Mode::Catalog,
-            Mode::Command => Mode::Command,
+            Mode::Menu => Mode::Menu,
         };
         if matches!(self.mode, Mode::CatalogSection) {
             self.current_section = None;
@@ -202,16 +218,6 @@ impl App {
         self.catalog_sections.iter().flat_map(|s| s.items.iter())
     }
 
-    fn run_command(&mut self, command: &str) {
-        match command {
-            "/quit" | "/exit" => self.should_quit = true,
-            "/validate-catalog" => self.validate_catalog(),
-            "/open-list" => self.open_list(),
-            "/catalog" => self.open_catalog(),
-            other => self.log.push(format!("unknown command: {other}")),
-        }
-    }
-
     fn run_list_command(&mut self, command: &str) {
         match command {
             "/add" => self.mode = Mode::AddItem,
@@ -238,36 +244,20 @@ impl App {
         }
     }
 
-    fn validate_catalog(&mut self) {
-        match Catalog::load(CATALOG_PATH) {
-            Ok(catalog) => {
-                let issues = catalog.validate();
-                if issues.is_empty() {
-                    self.log.push("Catalog is valid.".to_string());
-                } else {
-                    self.log
-                        .push(format!("Catalog has {} problem(s):", issues.len()));
-                    for issue in issues {
-                        self.log.push(format!("  - {issue}"));
-                    }
-                }
-            }
-            Err(e) => self.log.push(format!("Error loading catalog: {e}")),
-        }
-    }
-
     fn open_list(&mut self) {
         match Catalog::load(CATALOG_PATH) {
-            Ok(catalog) => self.catalog_sections = catalog.sections,
-            Err(e) => self.log.push(format!("Error loading catalog: {e}")),
+            Ok(catalog) => {
+                self.catalog_sections = catalog.sections;
+                self.status = None;
+            }
+            Err(e) => self.status = Some(format!("Error loading catalog: {e}")),
         }
 
         match GroceryList::load(LIST_PATH) {
             Ok(list) => self.working_list = list,
-            Err(e) => self.log.push(e),
+            Err(e) => self.status = Some(e),
         }
 
-        self.status = None;
         self.mode = Mode::List;
     }
 

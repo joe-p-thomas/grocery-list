@@ -3,7 +3,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
-use crate::app::{App, Mode};
+use crate::app::{App, MENU_ITEMS, Mode};
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let suggestions_height = if app.suggestions.is_empty() {
@@ -12,6 +12,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         app.suggestions.len().min(5) as u16 + 2
     };
     let status_height = if app.status.is_some() { 1 } else { 0 };
+    let input_height = if matches!(app.mode, Mode::Menu) { 0 } else { 3 };
 
     let root = Layout::default()
         .direction(Direction::Vertical)
@@ -20,14 +21,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Constraint::Min(0),
             Constraint::Length(status_height),
             Constraint::Length(suggestions_height),
-            Constraint::Length(3),
+            Constraint::Length(input_height),
         ])
         .split(frame.area());
 
     frame.render_widget(Paragraph::new("grocery-list").bold(), root[0]);
 
     match app.mode {
-        Mode::Command => draw_output(frame, app, root[1]),
+        Mode::Menu => draw_menu(frame, app, root[1]),
         Mode::List | Mode::AddItem | Mode::RemoveItem => draw_list(frame, app, root[1]),
         Mode::Catalog => draw_catalog(frame, app, root[1]),
         Mode::CatalogSection | Mode::CatalogAddItem => draw_catalog_section(frame, app, root[1]),
@@ -62,34 +63,36 @@ pub fn draw(frame: &mut Frame, app: &App) {
         frame.render_stateful_widget(list, root[3], &mut state);
     }
 
-    let input_title = match app.mode {
-        Mode::Command => "Command",
-        Mode::List => "List command",
-        Mode::AddItem => "Add item",
-        Mode::RemoveItem => "Remove item",
-        Mode::Catalog => "Catalog command",
-        Mode::CatalogSection => "Command",
-        Mode::CatalogAddItem => "Add item to section",
-    };
-    frame.render_widget(
-        Paragraph::new(app.input.as_str())
-            .block(Block::default().borders(Borders::ALL).title(input_title)),
-        root[4],
-    );
+    if !matches!(app.mode, Mode::Menu) {
+        let input_title = match app.mode {
+            Mode::Menu => "",
+            Mode::List => "List command",
+            Mode::AddItem => "Add item",
+            Mode::RemoveItem => "Remove item",
+            Mode::Catalog => "Catalog command",
+            Mode::CatalogSection => "Command",
+            Mode::CatalogAddItem => "Add item to section",
+        };
+        frame.render_widget(
+            Paragraph::new(app.input.as_str())
+                .block(Block::default().borders(Borders::ALL).title(input_title)),
+            root[4],
+        );
 
-    frame.set_cursor_position((root[4].x + 1 + app.input.len() as u16, root[4].y + 1));
+        frame.set_cursor_position((root[4].x + 1 + app.input.len() as u16, root[4].y + 1));
+    }
 }
 
-fn draw_output(frame: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = app
-        .log
+fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
+    let items: Vec<ListItem> = MENU_ITEMS
         .iter()
-        .map(|line| ListItem::new(line.as_str()))
+        .map(|label| ListItem::new(*label))
         .collect();
-    frame.render_widget(
-        List::new(items).block(Block::default().borders(Borders::ALL).title("Output")),
-        area,
-    );
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Menu"))
+        .highlight_symbol("> ");
+    let mut state = ListState::default().with_selected(Some(app.menu_selected));
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 fn draw_list(frame: &mut Frame, app: &App, area: Rect) {

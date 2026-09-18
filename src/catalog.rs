@@ -42,36 +42,6 @@ impl Catalog {
         serde_yaml::from_str(&contents).map_err(LoadError::Parse)
     }
 
-    /// Returns a list of human-readable problems with the catalog.
-    /// An empty list means the catalog is valid.
-    pub fn validate(&self) -> Vec<String> {
-        let mut issues = Vec::new();
-        let mut seen_sections = std::collections::HashSet::new();
-
-        for section in &self.sections {
-            if section.name.trim().is_empty() {
-                issues.push("a section has an empty name".to_string());
-            } else if !seen_sections.insert(section.name.as_str()) {
-                issues.push(format!("duplicate section: {}", section.name));
-            }
-
-            if section.items.is_empty() {
-                issues.push(format!("section '{}' has no items", section.name));
-            }
-
-            let mut seen_items = std::collections::HashSet::new();
-            for item in &section.items {
-                if item.trim().is_empty() {
-                    issues.push(format!("section '{}' has an empty item name", section.name));
-                } else if !seen_items.insert(item.as_str()) {
-                    issues.push(format!("duplicate item '{item}' in section '{}'", section.name));
-                }
-            }
-        }
-
-        issues
-    }
-
     /// Sorts each section's items alphabetically (case-insensitive), in place.
     pub fn sort_items(&mut self) {
         for section in &mut self.sections {

@@ -38,29 +38,31 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
             if key.kind != KeyEventKind::Press {
                 continue;
             }
-            match key.code {
-                KeyCode::Enter => app.submit_input(),
-                KeyCode::Char(c) => {
-                    app.input.push(c);
-                    app.input_changed();
+            if matches!(app.mode, Mode::Menu) {
+                match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => app.select_menu_next(),
+                    KeyCode::Char('k') | KeyCode::Up => app.select_menu_prev(),
+                    KeyCode::Enter => app.confirm_menu(),
+                    KeyCode::Esc | KeyCode::Char('q') => app.should_quit = true,
+                    _ => {}
                 }
-                KeyCode::Backspace => {
-                    app.input.pop();
-                    app.input_changed();
+            } else {
+                match key.code {
+                    KeyCode::Enter => app.submit_input(),
+                    KeyCode::Char(c) => {
+                        app.input.push(c);
+                        app.input_changed();
+                    }
+                    KeyCode::Backspace => {
+                        app.input.pop();
+                        app.input_changed();
+                    }
+                    KeyCode::Up => app.select_prev_suggestion(),
+                    KeyCode::Down => app.select_next_suggestion(),
+                    KeyCode::Tab => app.accept_suggestion(),
+                    KeyCode::Esc => app.back(),
+                    _ => {}
                 }
-                KeyCode::Up => app.select_prev_suggestion(),
-                KeyCode::Down => app.select_next_suggestion(),
-                KeyCode::Tab => app.accept_suggestion(),
-                KeyCode::Esc => match app.mode {
-                    Mode::Command => app.should_quit = true,
-                    Mode::List
-                    | Mode::AddItem
-                    | Mode::RemoveItem
-                    | Mode::Catalog
-                    | Mode::CatalogSection
-                    | Mode::CatalogAddItem => app.back(),
-                },
-                _ => {}
             }
         }
 
