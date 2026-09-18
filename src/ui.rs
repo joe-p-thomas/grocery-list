@@ -1,7 +1,7 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph};
 
 use crate::app::{App, MENU_ITEMS, Mode};
 
@@ -123,7 +123,10 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    let list = List::new(rows).block(block).highlight_symbol("> ");
+    let list = List::new(rows)
+        .block(block)
+        .highlight_symbol("> ")
+        .highlight_spacing(HighlightSpacing::Always);
     let mut state = ListState::default().with_selected(selected_row);
     frame.render_stateful_widget(list, area, &mut state);
 }
